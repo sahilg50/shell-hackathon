@@ -5,18 +5,36 @@ import math
 import threading
 import time
 import pygame
-# from triggerEmail import sender_email
+from triggerEmail import sendEmail
+import pandas as pd
+import os
+import random
 
 classNames = ['Excavator', 'Gloves', 'Hardhat', 'Ladder', 'Mask', 'NO-hardhat',
               'NO-Mask', 'NO-Safety Vest', 'Person', 'SUV', 'Safety Cone', 'Safety Vest',
               'bus', 'dump truck', 'fire hydrant', 'machinery', 'mini-van', 'sedan', 'semi',
               'trailer', 'truck and trailer', 'truck', 'van', 'vehicle', 'wheel loader']
 
+collected_data = []
+data_dict = {}
+
+
+# Function to append data to an existing CSV file or create a new one with headers
+def append_data_to_csv(file_path, data: dict):
+    # Convert the data to a DataFrame
+    df = pd.DataFrame(data)
+    # Check if the file exists
+    if os.path.exists(file_path):
+        # Append data to the existing CSV file without headers
+        df.to_csv(file_path, mode='a', index=False, header=False)
+    else:
+        # If the file doesn't exist, create a new CSV file and write data with headers
+        df.to_csv(file_path, mode='w', index=False, header=True)
+
 
 def trigger_email():
     print("Email Triggered")
-    # sender_email()
-
+    sendEmail(data_dict['Start_Date_Time'], data_dict['Zone_Triggered'], data_dict['Violations'])
 
 
 class SoundPlayer:
@@ -71,17 +89,29 @@ class SoundPlayer:
         return self.sound_thread is not None and self.sound_thread.is_alive()
 
 
-def handle_alarm_and_email(violation: bool, player: SoundPlayer):
+def handle_alarm_and_email(violation: bool, player: SoundPlayer, missing_classes):
+    global data_dict
 
     if violation and not player.is_playing():
         # Start the siren
         player.start()
+
+        # Collect the data
+
+        data_dict = {
+            'Start_Date_Time': datetime.now(),
+            'Zone_Triggered': random.choice([1, 2, 3, 4]),
+            'Violations': missing_classes
+        }
+
         # Trigger the email
         trigger_email()
 
     if not violation and player.is_playing():
+        data_dict.update({'End_Date_Time': datetime.now()})
         print("Zone cleared")
         player.stop()
+        append_data_to_csv('./data_insights.csv', data_dict)
 
 
 def video_detection(path_x):
@@ -118,7 +148,8 @@ def video_detection(path_x):
                 class_name = classNames[cls]
                 if class_name in ['NO-Safety Vest', 'NO-hardhat']:
                     missing_classes.append(class_name)
-                elif class_name == 'Person': is_person_present = True
+                elif class_name == 'Person':
+                    is_person_present = True
 
                 label = f'{class_name}{conf}'
                 t_size = cv2.getTextSize(label, 0, fontScale=1, thickness=2)[0]
@@ -156,10 +187,10 @@ def video_detection(path_x):
             # Handling alarm and email in case of missing classes
             if is_person_present and len(missing_classes) != 0:
                 print(missing_classes)
-                handle_alarm_and_email(True, player)
+                handle_alarm_and_email(True, player, missing_classes)
 
             else:
-                handle_alarm_and_email(False, player)
+                handle_alarm_and_email(False, player, missing_classes)
 
         yield img
 
